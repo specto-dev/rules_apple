@@ -57,6 +57,8 @@ things to do.
   when it can be merged in the future
 - If for some reason a commit should never be cherry picked, comment on
   it to indicate why and so it appears triaged for the future
+- When cherry picking multiple tulsi commits, be sure to land the
+  version bumps in the same order as they were upstream
 
 # Reviews
 
