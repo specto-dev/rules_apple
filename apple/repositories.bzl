@@ -122,6 +122,7 @@ def apple_rules_dependencies(ignore_version_differences = False):
         urls = [
             "https://github.com/specto-dev/rules_swift/archive/ae922851077fe4701c92955f43dd50cb50d30efd.tar.gz",
         ],
+        strip_prefix = "rules_swift-ae922851077fe4701c92955f43dd50cb50d30efd",
         sha256 = "f359dd7c89f73dbc30cae29dd6a6d6bcd9cd35839abad719899cbefa2a99a81c",
         ignore_version_differences = ignore_version_differences,
     )
