@@ -143,6 +143,8 @@ def main():
                                          executable=True,
                                          output_path=args.temp_path)
     else:
+      print(f"all_binary_archs: {all_binary_archs}")
+      print(f"framework_archs: {framework_archs}")
       slices_needed = framework_archs.intersection(all_binary_archs)
       if not slices_needed:
         print("Error: Precompiled framework does not share any binary "
