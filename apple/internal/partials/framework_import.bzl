@@ -97,6 +97,7 @@ def _framework_import_partial_impl(
         for x in targets
         if AppleFrameworkImportInfo in x
     ]).to_list()
+    print(build_archs_found)
 
     # Start assembling our partial's outputs.
     bundle_zips = []
