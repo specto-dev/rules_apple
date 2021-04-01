@@ -44,10 +44,7 @@ def _zip_framework(framework_temp_path, output_zip_path):
 
 
 def _relpath_from_framework(framework_absolute_path):
-  """
-  Returns a tuple of relative path to the root of the framework bundle,
-  and the path to the framework bundle.
-  """
+  """Returns a relative path to the root of the framework bundle."""
   framework_dir = None
   parent_dir = os.path.dirname(framework_absolute_path)
   while parent_dir != "/" and framework_dir is None:
@@ -61,37 +58,38 @@ def _relpath_from_framework(framework_absolute_path):
           framework_absolute_path)
     return None
 
-  return os.path.relpath(framework_absolute_path, framework_dir), framework_dir
+  return os.path.relpath(framework_absolute_path, framework_dir)
 
-def _copy_framework_contents(framework_binaries, output_path, slices_needed, strip_bitcode):
-  """Copies framework contents to a given path, marking as writable and executable as needed."""
-  if not framework_binaries or not output_path:
+
+def _copy_framework_file(framework_file, executable, output_path):
+  """Copies file to given path, marking as writable and executable as needed."""
+  path_from_framework = _relpath_from_framework(framework_file)
+  if not path_from_framework:
     return 1
-  path_from_framework, framework_dir = _relpath_from_framework(framework_binaries[0])
 
-  # Verify that all binaries, if there are more than one, have the same root.
-  for framework_binary in framework_binaries[1:]:
-    _, root = _relpath_from_framework(framework_binary)
-    if root != framework_dir:
-        print("Internal Error: Binary at path {} does not have expected framework root {}".format(framework_binary, framework_dir))
-        return 1
-  
-  # Copy the framework directory to the output path, preserving all symliinks
-  if os.path.exists(output_path):
-    shutil.rmtree(output_path)
-  shutil.copytree(framework_dir, output_path)
-
-  # Set executable permissions on the binaries and strip archs/bitcode if necessary.
-  for framework_binary in framework_binaries:
-    input_relpath, _ = _relpath_from_framework(framework_binary)
-    output_binary = os.path.join(output_path, input_relpath)
-    os.chmod(output_binary, 0o755)
-    if slices_needed:
-      lipo.invoke_lipo(output_binary, slices_needed, output_binary)
-    if strip_bitcode:
-      bitcode_strip.invoke(output_binary, output_binary)
-  
+  temp_framework_path = os.path.join(output_path, path_from_framework)
+  temp_framework_dirs = os.path.dirname(temp_framework_path)
+  if not os.path.exists(temp_framework_dirs):
+    os.makedirs(temp_framework_dirs)
+  shutil.copy(framework_file, temp_framework_path)
+  os.chmod(temp_framework_path, 0o755 if executable else 0o644)
   return 0
+
+
+def _strip_framework_binary(framework_binary, output_path, slices_needed):
+  """Strips the binary to only the slices needed, saves output to given path."""
+  if not slices_needed:
+    print("Internal Error: Did not specify any slices needed for binary at "
+          "path: " + framework_binary)
+    return 1
+
+  path_from_framework = _relpath_from_framework(framework_binary)
+  if not path_from_framework:
+    return 1
+
+  temp_framework_path = os.path.join(output_path, path_from_framework)
+
+  lipo.invoke_lipo(framework_binary, slices_needed, temp_framework_path)
 
 
 def main():
@@ -128,28 +126,47 @@ def main():
   if not framework_archs:
     return 1
 
-  # If the imported framework is single architecture, and therefore assumed
-  # that it doesn't need to be lipoed, or if the binary architectures match
-  # the framework architectures perfectly, treat as a copy instead of a lipo
-  # operation.
-  if len(framework_archs) == 1 or all_binary_archs == framework_archs:
-    slices_needed = []
-  else:
-    slices_needed = framework_archs.intersection(all_binary_archs)
-    if not slices_needed:
-      print("Error: Precompiled framework does not share any binary "
-            "architectures with the binaries that were built.")
-      return 1
-
   # Delete any existing stale framework files, if any exist.
   if os.path.exists(args.temp_path):
     shutil.rmtree(args.temp_path)
   if os.path.exists(args.output_zip):
     os.remove(args.output_zip)
+  os.makedirs(args.temp_path)
 
-  status_code = _copy_framework_contents(args.framework_binary, args.temp_path, slices_needed, args.strip_bitcode)
-  if status_code:
-    return 1
+  for framework_binary in args.framework_binary:
+    # If the imported framework is single architecture, and therefore assumed
+    # that it doesn't need to be lipoed, or if the binary architectures match
+    # the framework architectures perfectly, treat as a copy instead of a lipo
+    # operation.
+    if len(framework_archs) == 1 or all_binary_archs == framework_archs:
+      status_code = _copy_framework_file(framework_binary,
+                                         executable=True,
+                                         output_path=args.temp_path)
+    else:
+      slices_needed = framework_archs.intersection(all_binary_archs)
+      if not slices_needed:
+        print("Error: Precompiled framework does not share any binary "
+              "architectures with the binaries that were built.")
+        return 1
+      status_code = _strip_framework_binary(framework_binary,
+                                            args.temp_path,
+                                            slices_needed)
+    if status_code:
+      return 1
+
+    # Strip bitcode from the output framework binary
+    if args.strip_bitcode:
+      output_binary = os.path.join(args.temp_path,
+                                   os.path.basename(framework_binary))
+      bitcode_strip.invoke(output_binary, output_binary)
+
+  if args.framework_file:
+    for framework_file in args.framework_file:
+      status_code = _copy_framework_file(framework_file,
+                                         executable=False,
+                                         output_path=args.temp_path)
+      if status_code:
+        return 1
 
   # Attempt to sign the framework, check for an error when signing.
   status_code = codesigningtool.main(args)
